@@ -1,0 +1,5 @@
+# Runtime configuration directory.
+#
+# Workflow definitions (YAML) will live here from Milestone 7 onward:
+#   workflows/
+#     daily_etl.yaml

@@ -1,0 +1,4 @@
+# Local data directory.
+#
+# Runtime artifacts (execution state database, run history) live here.
+# Contents are gitignored except this placeholder.
