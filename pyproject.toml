@@ -116,9 +116,9 @@ show_error_codes = true
 files = ["src/etl_orchestrator", "tests"]
 exclude = ["\\.venv", "build", "dist"]
 
-[[tool.mypy.overrides]]
 # PyYAML is used from Milestone 7 (YAML workflow configuration) onward.
-# Re-add a stub override here if mypy reports missing imports for yaml.
+# Re-add a [[tool.mypy.overrides]] section with module = "yaml.*" and
+# ignore_missing_imports = true if mypy reports missing imports for yaml.
 
 # =============================================================================
 # Tool: pytest
