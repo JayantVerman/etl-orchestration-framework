@@ -21,5 +21,26 @@ Core pipeline:
         -> Workflow Completion
 """
 
+from etl_orchestrator.dag import Task, Workflow
+from etl_orchestrator.exceptions import (
+    DependencyCycleError,
+    DuplicateTaskError,
+    OrchestrationError,
+    SelfDependencyError,
+    UnknownTaskError,
+    WorkflowValidationError,
+)
+
 __version__ = "0.1.0"
-__all__ = ["__version__"]
+
+__all__ = [
+    "DependencyCycleError",
+    "DuplicateTaskError",
+    "OrchestrationError",
+    "SelfDependencyError",
+    "Task",
+    "UnknownTaskError",
+    "Workflow",
+    "WorkflowValidationError",
+    "__version__",
+]
