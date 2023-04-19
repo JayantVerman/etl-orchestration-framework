@@ -6,18 +6,20 @@ demonstrate the core concepts behind real data-platform workflow engines
 
 ## Status
 
-**Project 03 — Milestones 1–2 complete.**
+**Project 03 — Milestones 1–3 complete.**
 
 - **Milestone 1:** project foundation (src layout package, tooling, CLI stub, tests)
 - **Milestone 2:** DAG model and validation — `Task`/`Workflow` (Pydantic), dependency
   registration with fail-fast duplicate/unknown/self-dependency checks, whole-graph
   validation collecting all problems, DFS cycle detection with exact cycle paths, and
   deterministic topological dependency resolution (Kahn's algorithm + min-heap)
+- **Milestone 3:** state management — `TaskState`/`WorkflowState` enums with explicit
+  legal-transition tables, terminal states, `StateTransitionError` on illegal moves,
+  and workflow-state aggregation from task outcomes (failure outranks cancellation)
 
-Later milestones add: execution engine, task/workflow state machines, retries with
-exponential backoff, persistence, YAML workflow configuration, a full CLI, a local
-scheduler, bounded concurrency, hooks and observability, recovery/cancellation,
-Docker and CI/CD, and full docs.
+Later milestones add: execution engine, retries with exponential backoff, persistence,
+YAML workflow configuration, a full CLI, a local scheduler, bounded concurrency, hooks
+and observability, recovery/cancellation, Docker and CI/CD, and full docs.
 
 ## What the framework will orchestrate
 

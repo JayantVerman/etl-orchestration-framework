@@ -62,3 +62,17 @@ class DependencyCycleError(WorkflowValidationError):
     def __init__(self, cycle: list[str]) -> None:
         self.cycle = list(cycle)
         super().__init__([f"dependency cycle: {' -> '.join(self.cycle)}"])
+
+
+class StateTransitionError(OrchestrationError):
+    """Raised when a task or workflow state change is not allowed.
+
+    Attributes:
+        current: The state the entity is in.
+        target: The state it was asked to move to.
+    """
+
+    def __init__(self, current: str, target: str, kind: str = "state") -> None:
+        self.current = current
+        self.target = target
+        super().__init__(f"invalid {kind} transition: {current} -> {target}")
