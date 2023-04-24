@@ -6,7 +6,7 @@ demonstrate the core concepts behind real data-platform workflow engines
 
 ## Status
 
-**Project 03 — Milestones 1–3 complete.**
+**Project 03 — Milestones 1–4 complete.**
 
 - **Milestone 1:** project foundation (src layout package, tooling, CLI stub, tests)
 - **Milestone 2:** DAG model and validation — `Task`/`Workflow` (Pydantic), dependency
@@ -16,8 +16,13 @@ demonstrate the core concepts behind real data-platform workflow engines
 - **Milestone 3:** state management — `TaskState`/`WorkflowState` enums with explicit
   legal-transition tables, terminal states, `StateTransitionError` on illegal moves,
   and workflow-state aggregation from task outcomes (failure outranks cancellation)
+- **Milestone 4:** execution engine — `WorkflowEngine.run()` executes tasks in
+  topological order, hands each callable a `TaskContext` (run id, attempt, params),
+  records per-task `TaskRunRecord`s (state, attempts, error, timestamps) in a
+  `WorkflowRun` with a transition log, blocks transitive downstream tasks as
+  `upstream_failed` when a dependency fails, and leaves independent branches running
 
-Later milestones add: execution engine, retries with exponential backoff, persistence,
+Later milestones add: retries with exponential backoff, persistence,
 YAML workflow configuration, a full CLI, a local scheduler, bounded concurrency, hooks
 and observability, recovery/cancellation, Docker and CI/CD, and full docs.
 

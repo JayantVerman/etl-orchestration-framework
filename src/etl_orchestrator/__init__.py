@@ -22,9 +22,17 @@ Core pipeline:
 """
 
 from etl_orchestrator.dag import Task, Workflow
+from etl_orchestrator.engine import (
+    TaskCallable,
+    TaskContext,
+    TaskRunRecord,
+    WorkflowEngine,
+    WorkflowRun,
+)
 from etl_orchestrator.exceptions import (
     DependencyCycleError,
     DuplicateTaskError,
+    EngineConfigurationError,
     OrchestrationError,
     SelfDependencyError,
     StateTransitionError,
@@ -58,13 +66,19 @@ __all__ = [
     "WORKFLOW_TRANSITIONS",
     "DependencyCycleError",
     "DuplicateTaskError",
+    "EngineConfigurationError",
     "OrchestrationError",
     "SelfDependencyError",
     "StateTransitionError",
     "Task",
+    "TaskCallable",
+    "TaskContext",
+    "TaskRunRecord",
     "TaskState",
     "UnknownTaskError",
     "Workflow",
+    "WorkflowEngine",
+    "WorkflowRun",
     "WorkflowState",
     "WorkflowValidationError",
     "__version__",

@@ -76,3 +76,12 @@ class StateTransitionError(OrchestrationError):
         self.current = current
         self.target = target
         super().__init__(f"invalid {kind} transition: {current} -> {target}")
+
+
+class EngineConfigurationError(OrchestrationError):
+    """Raised when the execution engine is misconfigured.
+
+    Examples: a workflow task has no registered callable, a callable
+    is registered for an unknown task, or the workflow itself fails
+    validation.
+    """
