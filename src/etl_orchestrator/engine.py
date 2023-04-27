@@ -9,20 +9,24 @@ Every state change goes through the transition tables in
 occur silently — the engine either performs a declared move or the
 framework raises.
 
-Failure semantics (before retries exist, Milestone 5): when a task
-fails, all of its transitive downstream tasks that are still
-``pending`` are marked ``upstream_failed`` and never executed. Tasks
-in *independent* branches are unaffected.
+Failure semantics: a task that fails is retried up to
+``Task.max_attempts`` times with exponential backoff
+(``Task.backoff_seconds * backoff_multiplier ** (attempt - 1)``).
+While retries remain, downstream tasks stay ``pending``. Once attempts
+are exhausted the failure is permanent: all transitive downstream
+tasks still ``pending`` are marked ``upstream_failed`` and never
+executed. Tasks in *independent* branches are unaffected.
 """
 
 from __future__ import annotations
 
+import time
 import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from etl_orchestrator.dag import Workflow
+from etl_orchestrator.dag import Task, Workflow
 from etl_orchestrator.exceptions import EngineConfigurationError
 from etl_orchestrator.states import (
     TaskState,
@@ -36,6 +40,9 @@ from etl_orchestrator.states import (
 TaskCallable = Callable[["TaskContext"], None]
 
 UtcNow = Callable[[], datetime]
+
+#: Puts the current thread to sleep; injectable for deterministic tests.
+Sleeper = Callable[[float], None]
 
 
 @dataclass
@@ -59,6 +66,7 @@ class TaskRunRecord:
     error: str | None = None
     started_at: datetime | None = None
     finished_at: datetime | None = None
+    next_retry_at: datetime | None = None
 
 
 @dataclass
@@ -101,6 +109,7 @@ class WorkflowEngine:
         tasks: Mapping[str, TaskCallable],
         *,
         clock: UtcNow = _utcnow,
+        sleeper: Sleeper = time.sleep,
     ) -> None:
         """Create an engine for a workflow and its task callables.
 
@@ -110,6 +119,7 @@ class WorkflowEngine:
             tasks: One callable per task id. Each callable receives a
                 :class:`TaskContext`.
             clock: Injectable clock for deterministic tests.
+            sleeper: Injectable sleep function used between retries.
 
         Raises:
             EngineConfigurationError: If the workflow is invalid, a
@@ -136,6 +146,7 @@ class WorkflowEngine:
         self._workflow = workflow
         self._tasks = dict(tasks)
         self._clock = clock
+        self._sleeper = sleeper
 
     @property
     def workflow(self) -> Workflow:
@@ -179,47 +190,86 @@ class WorkflowEngine:
         task_id: str,
         run_params: dict[str, object],
     ) -> None:
-        """Run one task unless its state forbids execution.
+        """Run one task with retries, unless its state forbids execution.
 
-        Only ``pending`` tasks execute; ``upstream_failed`` and other
-        non-pending states are skipped (re-running a blocked or
-        finished task is recovery territory, Milestone 12).
+        Only ``pending`` tasks execute. A failing task is retried up to
+        ``Task.max_attempts`` with exponential backoff; exhaustion is a
+        permanent failure that blocks downstream (Milestone 12 owns
+        re-running terminal tasks).
         """
         record = run.record(task_id)
         if record.state is not TaskState.PENDING:
             run.note(f"{task_id}: skipped execution (state={record.state.value})")
             return
 
-        ctx = TaskContext(
-            run_id=run.run_id,
-            task_id=task_id,
-            workflow_id=run.workflow_id,
-            attempt=record.attempts + 1,
-            params=dict(run_params),
-        )
+        task_def: Task = self._workflow.tasks[task_id]
+        attempt = record.attempts
 
-        transition_task(record.state, TaskState.RUNNING)
-        record.state = TaskState.RUNNING
-        record.attempts = ctx.attempt
-        if record.started_at is None:
-            record.started_at = self._clock()
-        run.note(f"{task_id}: {TaskState.PENDING.value} -> running")
+        while True:
+            attempt += 1
+            ctx = TaskContext(
+                run_id=run.run_id,
+                task_id=task_id,
+                workflow_id=run.workflow_id,
+                attempt=attempt,
+                params=dict(run_params),
+            )
+            transition_task(record.state, TaskState.RUNNING)
+            record.state = TaskState.RUNNING
+            record.attempts = attempt
+            if record.started_at is None:
+                record.started_at = self._clock()
+            run.note(
+                f"{task_id}: {TaskState.PENDING.value if attempt == 1 else TaskState.RETRYING.value}"
+                f" -> running (attempt {attempt}/{task_def.max_attempts})"
+            )
 
-        try:
-            self._tasks[task_id](ctx)
-        except Exception as exc:
-            transition_task(record.state, TaskState.FAILED)
-            record.state = TaskState.FAILED
-            record.error = f"{type(exc).__name__}: {exc}"
+            try:
+                self._tasks[task_id](ctx)
+            except Exception as exc:
+                transition_task(record.state, TaskState.FAILED)
+                record.state = TaskState.FAILED
+                record.error = f"{type(exc).__name__}: {exc}"
+                record.finished_at = self._clock()
+                run.note(f"{task_id}: running -> failed ({record.error})")
+
+                if attempt < task_def.max_attempts:
+                    self._schedule_retry(run, task_def, record, attempt)
+                    continue
+
+                run.note(
+                    f"{task_id}: permanent failure after {attempt} "
+                    "attempt(s); blocking downstream"
+                )
+                self._block_downstream(run, task_id)
+                return
+
+            transition_task(record.state, TaskState.SUCCESS)
+            record.state = TaskState.SUCCESS
             record.finished_at = self._clock()
-            run.note(f"{task_id}: running -> failed ({record.error})")
-            self._block_downstream(run, task_id)
+            record.next_retry_at = None
+            run.note(f"{task_id}: running -> success")
             return
 
-        transition_task(record.state, TaskState.SUCCESS)
-        record.state = TaskState.SUCCESS
-        record.finished_at = self._clock()
-        run.note(f"{task_id}: running -> success")
+    def _schedule_retry(
+        self,
+        run: WorkflowRun,
+        task_def: Task,
+        record: TaskRunRecord,
+        failed_attempt: int,
+    ) -> None:
+        """Move a failed task to ``retrying`` and wait out the backoff."""
+        delay = task_def.backoff_delay(failed_attempt)
+        transition_task(record.state, TaskState.RETRYING)
+        record.state = TaskState.RETRYING
+        record.next_retry_at = self._clock() + timedelta(seconds=delay)
+        run.note(
+            f"{record.task_id}: failed -> retrying "
+            f"(next attempt in {delay:.3g}s, "
+            f"attempt {failed_attempt}/{task_def.max_attempts})"
+        )
+        if delay > 0:
+            self._sleeper(delay)
 
     def _block_downstream(self, run: WorkflowRun, failed_task_id: str) -> None:
         """Mark still-pending transitive dependents upstream_failed."""

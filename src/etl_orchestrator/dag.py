@@ -64,10 +64,23 @@ class Task(BaseModel):
     task_id: str
     description: str = ""
 
+    # Retry policy (enforced by the execution engine, Milestone 5).
+    max_attempts: int = Field(default=1, ge=1)
+    backoff_seconds: float = Field(default=0.0, ge=0.0)
+    backoff_multiplier: float = Field(default=2.0, ge=1.0)
+
     @field_validator("task_id")
     @classmethod
     def _check_task_id(cls, value: str) -> str:
         return _validate_id(value, "task id")
+
+    def backoff_delay(self, failed_attempt: int) -> float:
+        """Return the delay before re-running after ``failed_attempt``.
+
+        Attempt 1 failure waits ``backoff_seconds``, attempt 2 failure
+        waits ``backoff_seconds * backoff_multiplier``, and so on.
+        """
+        return self.backoff_seconds * (self.backoff_multiplier ** (failed_attempt - 1))
 
 
 class Workflow(BaseModel):

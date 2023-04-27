@@ -88,7 +88,7 @@ class TestSuccessfulRuns:
         wf = linear_workflow()
         run = WorkflowEngine(wf, Recorder().callables(wf)).run()
         assert "workflow: pending -> running" in run.log
-        assert "a: pending -> running" in run.log
+        assert any(entry.startswith("a: pending -> running") for entry in run.log)
         assert "a: running -> success" in run.log
         assert "workflow: running -> success" in run.log
 

@@ -6,7 +6,7 @@ demonstrate the core concepts behind real data-platform workflow engines
 
 ## Status
 
-**Project 03 — Milestones 1–4 complete.**
+**Project 03 — Milestones 1–5 complete.**
 
 - **Milestone 1:** project foundation (src layout package, tooling, CLI stub, tests)
 - **Milestone 2:** DAG model and validation — `Task`/`Workflow` (Pydantic), dependency
@@ -22,9 +22,14 @@ demonstrate the core concepts behind real data-platform workflow engines
   `WorkflowRun` with a transition log, blocks transitive downstream tasks as
   `upstream_failed` when a dependency fails, and leaves independent branches running
 
-Later milestones add: retries with exponential backoff, persistence,
-YAML workflow configuration, a full CLI, a local scheduler, bounded concurrency, hooks
-and observability, recovery/cancellation, Docker and CI/CD, and full docs.
+- **Milestone 5:** retries and failure handling — per-task retry policy
+  (`max_attempts`, `backoff_seconds`, `backoff_multiplier`), exponential backoff with
+  injectable sleep, `retrying` state with `next_retry_at`, permanent failure after
+  exhaustion → downstream blocking; transient failures recover without blocking
+
+Later milestones add: persistence, YAML workflow configuration, a full CLI, a local
+scheduler, bounded concurrency, hooks and observability, recovery/cancellation,
+Docker and CI/CD, and full docs.
 
 ## What the framework will orchestrate
 
