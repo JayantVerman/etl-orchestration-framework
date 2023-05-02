@@ -85,3 +85,11 @@ class EngineConfigurationError(OrchestrationError):
     is registered for an unknown task, or the workflow itself fails
     validation.
     """
+
+
+class WorkflowConfigError(OrchestrationError):
+    """Raised when a workflow configuration file cannot be used.
+
+    Examples: the file does not exist, is not valid YAML, or defines
+    tasks with unknown dependencies or invalid fields.
+    """

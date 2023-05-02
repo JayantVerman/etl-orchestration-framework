@@ -76,6 +76,7 @@ class WorkflowRun:
     workflow_id: str
     run_id: str = field(default_factory=lambda: uuid.uuid4().hex)
     workflow_state: WorkflowState = WorkflowState.PENDING
+    params: dict[str, object] = field(default_factory=dict)
     records: dict[str, TaskRunRecord] = field(default_factory=dict)
     log: list[str] = field(default_factory=list)
     started_at: datetime | None = None
@@ -110,6 +111,7 @@ class WorkflowEngine:
         *,
         clock: UtcNow = _utcnow,
         sleeper: Sleeper = time.sleep,
+        task_params: Mapping[str, Mapping[str, object]] | None = None,
     ) -> None:
         """Create an engine for a workflow and its task callables.
 
@@ -120,6 +122,9 @@ class WorkflowEngine:
                 :class:`TaskContext`.
             clock: Injectable clock for deterministic tests.
             sleeper: Injectable sleep function used between retries.
+            task_params: Optional per-task parameters; merged under the
+                run-level params passed to :meth:`run` (per-task values
+                cannot override run-level keys).
 
         Raises:
             EngineConfigurationError: If the workflow is invalid, a
@@ -147,6 +152,9 @@ class WorkflowEngine:
         self._tasks = dict(tasks)
         self._clock = clock
         self._sleeper = sleeper
+        self._task_params = {
+            task_id: dict(values) for task_id, values in (task_params or {}).items()
+        }
 
     @property
     def workflow(self) -> Workflow:
@@ -165,6 +173,7 @@ class WorkflowEngine:
         """
         run = WorkflowRun(workflow_id=self._workflow.workflow_id)
         run_params = dict(params or {})
+        run.params = run_params
         run.started_at = self._clock()
         transition_workflow(run.workflow_state, WorkflowState.RUNNING)
         run.workflow_state = WorkflowState.RUNNING
@@ -212,7 +221,10 @@ class WorkflowEngine:
                 task_id=task_id,
                 workflow_id=run.workflow_id,
                 attempt=attempt,
-                params=dict(run_params),
+                params={
+                    **self._task_params.get(task_id, {}),
+                    **run_params,
+                },
             )
             transition_task(record.state, TaskState.RUNNING)
             record.state = TaskState.RUNNING

@@ -1,0 +1,72 @@
+# Example workflow: the daily customers/orders ETL pipeline from the
+# project scenario. Run it with:
+#   .\.venv\Scripts\orchestrator.exe workflow run daily_etl
+workflow_id: daily_etl
+description: Daily customers/orders ETL demonstration pipeline.
+tasks:
+  # Customers branch
+  - task_id: extract_customers
+    callable: echo
+    params:
+      message: extracting customers
+  - task_id: validate_customers
+    callable: echo
+    depends_on: [extract_customers]
+    params:
+      message: validating customers
+  - task_id: transform_customers
+    callable: flaky
+    depends_on: [validate_customers]
+    max_attempts: 3
+    backoff_seconds: 0.05
+    params:
+      fail_times: 1
+      message: transforming customers (first attempt fails on purpose)
+  - task_id: load_customers
+    callable: echo
+    depends_on: [transform_customers]
+    params:
+      message: loading customers
+  - task_id: build_customer_summary
+    callable: echo
+    depends_on: [load_customers]
+    params:
+      message: building customer summary
+
+  # Orders branch
+  - task_id: extract_orders
+    callable: echo
+    params:
+      message: extracting orders
+  - task_id: validate_orders
+    callable: echo
+    depends_on: [extract_orders]
+    params:
+      message: validating orders
+  - task_id: transform_orders
+    callable: echo
+    depends_on: [validate_orders]
+    params:
+      message: transforming orders
+  - task_id: load_orders
+    callable: echo
+    depends_on: [transform_orders]
+    params:
+      message: loading orders
+  - task_id: build_order_summary
+    callable: echo
+    depends_on: [load_orders]
+    params:
+      message: building order summary
+
+  # Join and notify
+  - task_id: daily_business_summary
+    callable: echo
+    depends_on: [build_customer_summary, build_order_summary]
+    params:
+      message: building daily business summary
+  - task_id: send_notification
+    callable: echo
+    depends_on: [daily_business_summary]
+    params:
+      message: notification sent
