@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -74,9 +75,13 @@ class RunStore:
     def __init__(self, db_path: str | Path) -> None:
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(str(self.db_path))
-        self._conn.executescript(_SCHEMA)
-        self._conn.commit()
+        # check_same_thread=False + _lock: the scheduler writes from a
+        # background thread while the main thread reads history.
+        self._lock = threading.Lock()
+        self._conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
+        with self._lock:
+            self._conn.executescript(_SCHEMA)
+            self._conn.commit()
 
     def close(self) -> None:
         """Close the underlying connection."""
@@ -93,7 +98,7 @@ class RunStore:
     # ------------------------------------------------------------------
     def save_run(self, run: WorkflowRun) -> None:
         """Insert or replace a run and its task records."""
-        with self._conn:
+        with self._lock, self._conn:
             self._conn.execute(
                 "INSERT OR REPLACE INTO workflow_runs "
                 "(run_id, workflow_id, state, started_at, finished_at,"
@@ -151,13 +156,20 @@ class RunStore:
     # ------------------------------------------------------------------
     def load_run(self, run_id: str) -> WorkflowRun | None:
         """Fully reconstruct a run, or return None if unknown."""
-        row = self._conn.execute(
-            "SELECT workflow_id, state, started_at, finished_at, params,"
-            " log FROM workflow_runs WHERE run_id = ?",
-            (run_id,),
-        ).fetchone()
-        if row is None:
-            return None
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT workflow_id, state, started_at, finished_at, params,"
+                " log FROM workflow_runs WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            task_rows = self._conn.execute(
+                "SELECT task_id, state, attempts, error, started_at,"
+                " finished_at, next_retry_at FROM task_runs WHERE run_id = ?"
+                " ORDER BY task_id",
+                (run_id,),
+            ).fetchall()
         workflow_id, state, started_at, finished_at, params, log = row
         run = WorkflowRun(
             workflow_id=workflow_id,
@@ -167,12 +179,6 @@ class RunStore:
             finished_at=_load_dt(finished_at),
             params=json.loads(params),
             log=json.loads(log),
-        )
-        task_rows = self._conn.execute(
-            "SELECT task_id, state, attempts, error, started_at,"
-            " finished_at, next_retry_at FROM task_runs WHERE run_id = ?"
-            " ORDER BY task_id",
-            (run_id,),
         )
         for task_row in task_rows:
             (
@@ -206,6 +212,8 @@ class RunStore:
             query += " WHERE workflow_id = ?"
             params = (workflow_id,)
         query += " ORDER BY COALESCE(started_at, '') DESC, run_id DESC"
+        with self._lock:
+            rows = self._conn.execute(query, params).fetchall()
         return [
             RunSummary(
                 run_id=row[0],
@@ -214,7 +222,7 @@ class RunStore:
                 started_at=_load_dt(row[3]),
                 finished_at=_load_dt(row[4]),
             )
-            for row in self._conn.execute(query, params)
+            for row in rows
         ]
 
     def latest_run(self, workflow_id: str) -> RunSummary | None:

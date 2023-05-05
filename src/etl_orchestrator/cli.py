@@ -14,6 +14,7 @@ Commands (Milestone 8)::
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import click
@@ -30,6 +31,7 @@ from etl_orchestrator.dag import Workflow
 from etl_orchestrator.engine import TaskCallable, WorkflowEngine
 from etl_orchestrator.exceptions import WorkflowConfigError
 from etl_orchestrator.persistence import RunStore
+from etl_orchestrator.scheduler import Scheduler
 from etl_orchestrator.states import WorkflowState
 
 _WORKFLOW_EXTENSIONS = (".yaml", ".yml")
@@ -88,10 +90,24 @@ def _build_engine(path: Path) -> tuple[WorkflowEngine, Workflow]:
     type=click.Path(file_okay=False, path_type=Path),
     help="Directory containing workflow YAML files.",
 )
+@click.option(
+    "--schedules-file",
+    "schedules_file",
+    default="data/schedules.json",
+    show_default=True,
+    type=click.Path(path_type=Path),
+    help="Path to the JSON schedules file.",
+)
 @click.pass_context
-def main(ctx: click.Context, db_path: Path, workflows_dir: Path) -> None:
+def main(
+    ctx: click.Context, db_path: Path, workflows_dir: Path, schedules_file: Path
+) -> None:
     """ETL Orchestration Framework command-line interface."""
-    ctx.obj = {"db_path": db_path, "workflows_dir": workflows_dir}
+    ctx.obj = {
+        "db_path": db_path,
+        "workflows_dir": workflows_dir,
+        "schedules_file": schedules_file,
+    }
 
 
 @main.command()
@@ -254,6 +270,96 @@ def run_cancel(obj: dict[str, Path], run_id: str) -> None:
         if not store.cancel_run(run_id):
             raise click.ClickException(f"run '{run_id}' not found or already terminal")
     click.echo(f"run {run_id} cancelled")
+
+
+# ----------------------------------------------------------------------
+# Scheduler commands (Milestone 9)
+# ----------------------------------------------------------------------
+def _load_schedules(path: Path) -> list[dict[str, object]]:
+    if not path.is_file():
+        return []
+    loaded: list[dict[str, object]] = json.loads(path.read_text(encoding="utf-8"))
+    return loaded
+
+
+def _save_schedules(path: Path, entries: list[dict[str, object]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(entries, indent=2), encoding="utf-8")
+
+
+@main.group()
+def scheduler() -> None:
+    """Register and run workflows on local intervals."""
+
+
+@scheduler.command("register")
+@click.argument("name")
+@click.option("--interval", required=True, type=float, help="Seconds between runs.")
+@click.pass_obj
+def scheduler_register(obj: dict[str, Path], name: str, interval: float) -> None:
+    """Register a workflow file for interval-based execution."""
+    path = _find_workflow_file(obj["workflows_dir"], name)
+    schedules_file: Path = obj["schedules_file"]
+    entries = _load_schedules(schedules_file)
+    entries = [e for e in entries if e.get("name") != name]
+    entries.append(
+        {"name": name, "path": str(path.resolve()), "interval_seconds": interval}
+    )
+    _save_schedules(schedules_file, entries)
+    click.echo(f"scheduled '{name}' every {interval}s ({path})")
+
+
+@scheduler.command("list")
+@click.pass_obj
+def scheduler_list(obj: dict[str, Path]) -> None:
+    """List registered schedules."""
+    entries = _load_schedules(obj["schedules_file"])
+    if not entries:
+        click.echo("no schedules registered")
+        return
+    for entry in entries:
+        click.echo(
+            f"{entry['name']}: every {entry['interval_seconds']}s ({entry['path']})"
+        )
+
+
+@scheduler.command("unregister")
+@click.argument("name")
+@click.pass_obj
+def scheduler_unregister(obj: dict[str, Path], name: str) -> None:
+    """Remove a schedule registration."""
+    schedules_file: Path = obj["schedules_file"]
+    entries = _load_schedules(schedules_file)
+    remaining = [e for e in entries if e.get("name") != name]
+    if len(remaining) == len(entries):
+        raise click.ClickException(f"schedule not found: {name}")
+    _save_schedules(schedules_file, remaining)
+    click.echo(f"unregistered '{name}'")
+
+
+@scheduler.command("run-once")
+@click.pass_obj
+def scheduler_run_once(obj: dict[str, Path]) -> None:
+    """Run every due schedule once (manual scheduler tick)."""
+    schedules_file: Path = obj["schedules_file"]
+    entries = _load_schedules(schedules_file)
+    if not entries:
+        click.echo("no schedules registered")
+        return
+    with RunStore(obj["db_path"]) as store:
+        sched = Scheduler(store)
+        for entry in entries:
+            sched.register(
+                str(entry["name"]),
+                str(entry["path"]),
+                float(entry["interval_seconds"]),  # type: ignore[arg-type]
+            )
+        runs = sched.run_once()
+    if not runs:
+        click.echo("no schedules due")
+        return
+    for scheduled_run in runs:
+        click.echo(f"{scheduled_run.workflow_id}: {scheduled_run.workflow_state.value}")
 
 
 if __name__ == "__main__":  # pragma: no cover
