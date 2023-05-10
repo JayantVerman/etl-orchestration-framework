@@ -20,9 +20,11 @@ executed. Tasks in *independent* branches are unaffected.
 
 from __future__ import annotations
 
+import threading
 import time
 import uuid
 from collections.abc import Callable, Mapping
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
@@ -112,6 +114,7 @@ class WorkflowEngine:
         clock: UtcNow = _utcnow,
         sleeper: Sleeper = time.sleep,
         task_params: Mapping[str, Mapping[str, object]] | None = None,
+        max_workers: int = 1,
     ) -> None:
         """Create an engine for a workflow and its task callables.
 
@@ -125,11 +128,17 @@ class WorkflowEngine:
             task_params: Optional per-task parameters; merged under the
                 run-level params passed to :meth:`run` (per-task values
                 cannot override run-level keys).
+            max_workers: Upper bound on threads used for independent
+                tasks (same dependency level). 1 = fully sequential.
 
         Raises:
             EngineConfigurationError: If the workflow is invalid, a
                 task has no callable, or a callable has no task.
         """
+        if max_workers < 1:
+            raise EngineConfigurationError(
+                f"max_workers must be >= 1, got {max_workers}"
+            )
         try:
             workflow.validate_workflow()
         except Exception as exc:
@@ -152,9 +161,12 @@ class WorkflowEngine:
         self._tasks = dict(tasks)
         self._clock = clock
         self._sleeper = sleeper
+        self._max_workers = max_workers
         self._task_params = {
             task_id: dict(values) for task_id, values in (task_params or {}).items()
         }
+        # Guards record mutations; task callables run outside it.
+        self._lock = threading.Lock()
 
     @property
     def workflow(self) -> Workflow:
@@ -162,7 +174,12 @@ class WorkflowEngine:
         return self._workflow
 
     def run(self, params: Mapping[str, object] | None = None) -> WorkflowRun:
-        """Execute the workflow once, sequentially, in topological order.
+        """Execute the workflow once, in dependency order.
+
+        With ``max_workers == 1`` (the default) tasks run sequentially
+        in deterministic topological order. With ``max_workers > 1``,
+        *independent* tasks (same dependency level) run in a bounded
+        thread pool; dependent tasks always run after their upstream.
 
         Args:
             params: Optional parameters copied into every task context.
@@ -179,8 +196,22 @@ class WorkflowEngine:
         run.workflow_state = WorkflowState.RUNNING
         run.note("workflow: pending -> running")
 
-        for task_id in self._workflow.topological_order():
-            self._execute_task(run, task_id, run_params)
+        if self._max_workers <= 1:
+            for task_id in self._workflow.topological_order():
+                self._execute_task(run, task_id, run_params)
+        else:
+            for level in self._dependency_levels():
+                if len(level) == 1:
+                    self._execute_task(run, level[0], run_params)
+                    continue
+                workers = min(self._max_workers, len(level))
+                with ThreadPoolExecutor(max_workers=workers) as pool:
+                    futures = [
+                        pool.submit(self._execute_task, run, task_id, run_params)
+                        for task_id in level
+                    ]
+                    for future in futures:
+                        future.result()
 
         final = aggregate_workflow_state(run.task_states())
         assert final is not None, "validated workflows have >= 1 task"
@@ -189,6 +220,24 @@ class WorkflowEngine:
         run.finished_at = self._clock()
         run.note(f"workflow: running -> {final.value}")
         return run
+
+    def _dependency_levels(self) -> list[list[str]]:
+        """Group tasks into levels executable in parallel.
+
+        A task's level is ``1 + max(level of upstream)``; tasks in the
+        same level have no dependency relationship between them. Each
+        level list is sorted for deterministic dispatch order.
+        """
+        level_of: dict[str, int] = {}
+        for task_id in self._workflow.topological_order():
+            upstream = self._workflow.upstream(task_id)
+            level_of[task_id] = (
+                1 + max(level_of[up] for up in upstream) if upstream else 0
+            )
+        by_level: dict[int, list[str]] = {}
+        for task_id, level in level_of.items():
+            by_level.setdefault(level, []).append(task_id)
+        return [sorted(by_level[level]) for level in sorted(by_level)]
 
     # ------------------------------------------------------------------
     # Internals
@@ -227,40 +276,44 @@ class WorkflowEngine:
                 },
             )
             transition_task(record.state, TaskState.RUNNING)
-            record.state = TaskState.RUNNING
-            record.attempts = attempt
-            if record.started_at is None:
-                record.started_at = self._clock()
-            run.note(
-                f"{task_id}: {TaskState.PENDING.value if attempt == 1 else TaskState.RETRYING.value}"
-                f" -> running (attempt {attempt}/{task_def.max_attempts})"
-            )
+            with self._lock:
+                record.state = TaskState.RUNNING
+                record.attempts = attempt
+                if record.started_at is None:
+                    record.started_at = self._clock()
+                run.note(
+                    f"{task_id}: {TaskState.PENDING.value if attempt == 1 else TaskState.RETRYING.value}"
+                    f" -> running (attempt {attempt}/{task_def.max_attempts})"
+                )
 
             try:
                 self._tasks[task_id](ctx)
             except Exception as exc:
                 transition_task(record.state, TaskState.FAILED)
-                record.state = TaskState.FAILED
-                record.error = f"{type(exc).__name__}: {exc}"
-                record.finished_at = self._clock()
-                run.note(f"{task_id}: running -> failed ({record.error})")
+                with self._lock:
+                    record.state = TaskState.FAILED
+                    record.error = f"{type(exc).__name__}: {exc}"
+                    record.finished_at = self._clock()
+                    run.note(f"{task_id}: running -> failed ({record.error})")
 
                 if attempt < task_def.max_attempts:
                     self._schedule_retry(run, task_def, record, attempt)
                     continue
 
-                run.note(
-                    f"{task_id}: permanent failure after {attempt} "
-                    "attempt(s); blocking downstream"
-                )
+                with self._lock:
+                    run.note(
+                        f"{task_id}: permanent failure after {attempt} "
+                        "attempt(s); blocking downstream"
+                    )
                 self._block_downstream(run, task_id)
                 return
 
             transition_task(record.state, TaskState.SUCCESS)
-            record.state = TaskState.SUCCESS
-            record.finished_at = self._clock()
-            record.next_retry_at = None
-            run.note(f"{task_id}: running -> success")
+            with self._lock:
+                record.state = TaskState.SUCCESS
+                record.finished_at = self._clock()
+                record.next_retry_at = None
+                run.note(f"{task_id}: running -> success")
             return
 
     def _schedule_retry(
@@ -273,13 +326,14 @@ class WorkflowEngine:
         """Move a failed task to ``retrying`` and wait out the backoff."""
         delay = task_def.backoff_delay(failed_attempt)
         transition_task(record.state, TaskState.RETRYING)
-        record.state = TaskState.RETRYING
-        record.next_retry_at = self._clock() + timedelta(seconds=delay)
-        run.note(
-            f"{record.task_id}: failed -> retrying "
-            f"(next attempt in {delay:.3g}s, "
-            f"attempt {failed_attempt}/{task_def.max_attempts})"
-        )
+        with self._lock:
+            record.state = TaskState.RETRYING
+            record.next_retry_at = self._clock() + timedelta(seconds=delay)
+            run.note(
+                f"{record.task_id}: failed -> retrying "
+                f"(next attempt in {delay:.3g}s, "
+                f"attempt {failed_attempt}/{task_def.max_attempts})"
+            )
         if delay > 0:
             self._sleeper(delay)
 
@@ -292,14 +346,15 @@ class WorkflowEngine:
             if task_id in visited:
                 continue
             visited.add(task_id)
-            record = run.record(task_id)
-            if record.state == TaskState.PENDING:
-                transition_task(record.state, TaskState.UPSTREAM_FAILED)
-                record.state = TaskState.UPSTREAM_FAILED
-                record.error = f"upstream task '{failed_task_id}' failed"
-                record.finished_at = self._clock()
-                run.note(
-                    f"{task_id}: pending -> upstream_failed "
-                    f"(upstream '{failed_task_id}' failed)"
-                )
+            with self._lock:
+                record = run.record(task_id)
+                if record.state == TaskState.PENDING:
+                    transition_task(record.state, TaskState.UPSTREAM_FAILED)
+                    record.state = TaskState.UPSTREAM_FAILED
+                    record.error = f"upstream task '{failed_task_id}' failed"
+                    record.finished_at = self._clock()
+                    run.note(
+                        f"{task_id}: pending -> upstream_failed "
+                        f"(upstream '{failed_task_id}' failed)"
+                    )
             pending_visit.extend(sorted(self._workflow.downstream(task_id)))
