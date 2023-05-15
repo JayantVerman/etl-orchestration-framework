@@ -20,6 +20,7 @@ executed. Tasks in *independent* branches are unaffected.
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 import uuid
@@ -30,6 +31,7 @@ from datetime import datetime, timedelta, timezone
 
 from etl_orchestrator.dag import Task, Workflow
 from etl_orchestrator.exceptions import EngineConfigurationError
+from etl_orchestrator.hooks import EngineHooks
 from etl_orchestrator.states import (
     TaskState,
     WorkflowState,
@@ -37,6 +39,8 @@ from etl_orchestrator.states import (
     transition_task,
     transition_workflow,
 )
+
+LOGGER = logging.getLogger(__name__)
 
 #: Signature every task callable must implement.
 TaskCallable = Callable[["TaskContext"], None]
@@ -115,6 +119,7 @@ class WorkflowEngine:
         sleeper: Sleeper = time.sleep,
         task_params: Mapping[str, Mapping[str, object]] | None = None,
         max_workers: int = 1,
+        hooks: EngineHooks | None = None,
     ) -> None:
         """Create an engine for a workflow and its task callables.
 
@@ -162,6 +167,7 @@ class WorkflowEngine:
         self._clock = clock
         self._sleeper = sleeper
         self._max_workers = max_workers
+        self._hooks = hooks or EngineHooks()
         self._task_params = {
             task_id: dict(values) for task_id, values in (task_params or {}).items()
         }
@@ -195,6 +201,12 @@ class WorkflowEngine:
         transition_workflow(run.workflow_state, WorkflowState.RUNNING)
         run.workflow_state = WorkflowState.RUNNING
         run.note("workflow: pending -> running")
+        LOGGER.info(
+            "workflow started",
+            extra={"workflow_id": run.workflow_id, "run_id": run.run_id},
+        )
+        if self._hooks.on_workflow_start is not None:
+            self._hooks.on_workflow_start(run)
 
         if self._max_workers <= 1:
             for task_id in self._workflow.topological_order():
@@ -219,6 +231,16 @@ class WorkflowEngine:
         run.workflow_state = final
         run.finished_at = self._clock()
         run.note(f"workflow: running -> {final.value}")
+        LOGGER.info(
+            "workflow finished",
+            extra={
+                "workflow_id": run.workflow_id,
+                "run_id": run.run_id,
+                "state": final.value,
+            },
+        )
+        if self._hooks.on_workflow_end is not None:
+            self._hooks.on_workflow_end(run)
         return run
 
     def _dependency_levels(self) -> list[list[str]]:
@@ -260,6 +282,15 @@ class WorkflowEngine:
             run.note(f"{task_id}: skipped execution (state={record.state.value})")
             return
 
+        # Block this task (and propagate downstream) if any upstream task
+        # has permanently failed. Must happen before any state mutation so
+        # that the PENDING check below catches the freshly blocked task.
+        self._block_if_upstream_failed(run, task_id)
+        record = run.record(task_id)  # refresh after mutations
+        if record.state is not TaskState.PENDING:
+            run.note(f"{task_id}: skipped execution (state={record.state.value})")
+            return
+
         task_def: Task = self._workflow.tasks[task_id]
         attempt = record.attempts
 
@@ -285,6 +316,17 @@ class WorkflowEngine:
                     f"{task_id}: {TaskState.PENDING.value if attempt == 1 else TaskState.RETRYING.value}"
                     f" -> running (attempt {attempt}/{task_def.max_attempts})"
                 )
+            LOGGER.info(
+                "task started",
+                extra={
+                    "workflow_id": run.workflow_id,
+                    "run_id": run.run_id,
+                    "task_id": task_id,
+                    "attempt": attempt,
+                },
+            )
+            if self._hooks.on_task_start is not None:
+                self._hooks.on_task_start(run, record)
 
             try:
                 self._tasks[task_id](ctx)
@@ -305,7 +347,18 @@ class WorkflowEngine:
                         f"{task_id}: permanent failure after {attempt} "
                         "attempt(s); blocking downstream"
                     )
-                self._block_downstream(run, task_id)
+                LOGGER.error(
+                    "task failed permanently",
+                    extra={
+                        "workflow_id": run.workflow_id,
+                        "run_id": run.run_id,
+                        "task_id": task_id,
+                        "attempt": attempt,
+                        "state": TaskState.FAILED.value,
+                    },
+                )
+                if self._hooks.on_task_failure is not None:
+                    self._hooks.on_task_failure(run, record)
                 return
 
             transition_task(record.state, TaskState.SUCCESS)
@@ -314,6 +367,18 @@ class WorkflowEngine:
                 record.finished_at = self._clock()
                 record.next_retry_at = None
                 run.note(f"{task_id}: running -> success")
+            LOGGER.info(
+                "task success",
+                extra={
+                    "workflow_id": run.workflow_id,
+                    "run_id": run.run_id,
+                    "task_id": task_id,
+                    "attempt": attempt,
+                    "state": TaskState.SUCCESS.value,
+                },
+            )
+            if self._hooks.on_task_success is not None:
+                self._hooks.on_task_success(run, record)
             return
 
     def _schedule_retry(
@@ -334,11 +399,28 @@ class WorkflowEngine:
                 f"(next attempt in {delay:.3g}s, "
                 f"attempt {failed_attempt}/{task_def.max_attempts})"
             )
+        LOGGER.info(
+            "task scheduled for retry",
+            extra={
+                "workflow_id": run.workflow_id,
+                "run_id": run.run_id,
+                "task_id": record.task_id,
+                "attempt": failed_attempt,
+                "state": TaskState.RETRYING.value,
+            },
+        )
+        if self._hooks.on_task_retry is not None:
+            self._hooks.on_task_retry(run, record, delay)
         if delay > 0:
             self._sleeper(delay)
 
     def _block_downstream(self, run: WorkflowRun, failed_task_id: str) -> None:
-        """Mark still-pending transitive dependents upstream_failed."""
+        """Mark still-pending transitive dependents upstream_failed.
+
+        Used both when a task permanently fails (block its downstream) and
+        when checking whether a candidate task should run (block it if any
+        upstream already permanently failed).
+        """
         pending_visit = sorted(self._workflow.downstream(failed_task_id))
         visited: set[str] = set()
         while pending_visit:
@@ -358,3 +440,23 @@ class WorkflowEngine:
                         f"(upstream '{failed_task_id}' failed)"
                     )
             pending_visit.extend(sorted(self._workflow.downstream(task_id)))
+
+    def _block_if_upstream_failed(
+        self, run: WorkflowRun, candidate_task_id: str
+    ) -> None:
+        """Block ``candidate_task_id`` (and its downstream) if any of its
+        direct or transitive upstreams is permanently failed.
+
+        Runs at the start of every :meth:`_execute_task` so that the main
+        loop never starts a task whose upstream has already been marked
+        failed — even when the loop has already dispatched the task before
+        the upstream's failure could propagate through :meth:`_block_downstream`.
+        """
+        for upstream_id in self._workflow.upstream(candidate_task_id):
+            upstream_record = run.record(upstream_id)
+            if upstream_record.state in (
+                TaskState.FAILED,
+                TaskState.UPSTREAM_FAILED,
+            ):
+                self._block_downstream(run, upstream_id)
+                break  # one failed upstream is enough; avoid redundant walks

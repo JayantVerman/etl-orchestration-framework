@@ -64,6 +64,12 @@ class Task(BaseModel):
     task_id: str
     description: str = ""
 
+    # Upstream dependencies. When a task is added to a workflow via
+    # :meth:`Workflow.add_task`, each entry in this list is wired into the
+    # graph as a directed edge ``dependency -> task``. Equivalent to
+    # calling :meth:`Workflow.add_dependency` for every entry.
+    depends_on: list[str] = Field(default_factory=list)
+
     # Retry policy (enforced by the execution engine, Milestone 5).
     max_attempts: int = Field(default=1, ge=1)
     backoff_seconds: float = Field(default=0.0, ge=0.0)
@@ -108,7 +114,8 @@ class Workflow(BaseModel):
     # Construction helpers
     # ------------------------------------------------------------------
     def add_task(self, task: Task) -> None:
-        """Register a task.
+        """Register a task and, if it declares upstream dependencies via
+        ``depends_on``, wire those into the dependency graph.
 
         Raises:
             DuplicateTaskError: If a task with the same id exists.
@@ -116,6 +123,8 @@ class Workflow(BaseModel):
         if task.task_id in self.tasks:
             raise DuplicateTaskError(task.task_id)
         self.tasks[task.task_id] = task
+        for upstream_id in task.depends_on:
+            self.add_dependency(task.task_id, upstream_id)
 
     def add_dependency(self, task_id: str, upstream_id: str) -> None:
         """Declare that ``task_id`` must run after ``upstream_id``.

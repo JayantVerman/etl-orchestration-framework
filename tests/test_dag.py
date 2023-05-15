@@ -230,3 +230,23 @@ class TestGraphQueries:
         task = Task(task_id="a")
         with pytest.raises(PydanticValidationError):
             task.task_id = "b"
+
+    def test_add_task_wires_depends_on_into_graph(self) -> None:
+        """``Task.depends_on`` must be wired into the graph automatically
+        by :meth:`Workflow.add_task` — equivalent to calling
+        :meth:`Workflow.add_dependency` for every entry."""
+        wf = Workflow(workflow_id="auto")
+        wf.add_task(Task(task_id="a"))
+        wf.add_task(Task(task_id="b", depends_on=["a"]))
+        wf.add_task(Task(task_id="c", depends_on=["a", "b"]))
+        assert wf.upstream("b") == frozenset({"a"})
+        assert wf.upstream("c") == frozenset({"a", "b"})
+        assert wf.topological_order() == ["a", "b", "c"]
+
+    def test_add_task_with_unknown_dependency_raises(self) -> None:
+        """If ``depends_on`` references a missing task, ``add_task`` must
+        raise ``UnknownTaskError`` (not silently drop the dependency)."""
+        wf = Workflow(workflow_id="auto_bad")
+        wf.add_task(Task(task_id="a"))
+        with pytest.raises(UnknownTaskError):
+            wf.add_task(Task(task_id="b", depends_on=["ghost"]))
