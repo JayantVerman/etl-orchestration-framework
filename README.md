@@ -42,6 +42,13 @@ demonstrate the core concepts behind real data-platform workflow engines
 Later milestones add: process-restart recovery, cancellation, Docker and CI/CD,
 and full docs.
 
+## Documentation
+
+- **[EXPLANATION.md](EXPLANATION.md)** — full walkthrough: what every
+  file does, design decisions, and **12 interview Q&A** (orchestration
+  fundamentals, retry strategy, concurrency, scaling, comparison with
+  Airflow / Dagster / Prefect, lessons learned, and more).
+
 ## What the framework will orchestrate
 
 Example daily pipeline (two independent branches joining into a summary):
