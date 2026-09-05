@@ -1,6 +1,5 @@
 # ETL Orchestration Framework
 
-![CI](https://github.com/JayantVerman/etl-orchestration-framework/actions/workflows/ci.yml/badge.svg)
 
 A small, self-contained Python framework for defining and running **ETL workflows** — pipelines of `Extract → Transform → Load` jobs and the **control logic** that surrounds them: dependencies, retries, failure handling, scheduling, persistence, concurrency, logging, and metrics.
 
@@ -10,19 +9,19 @@ Written **from scratch** (no Airflow / Dagster / Prefect dependency) to demonstr
 
 ## Milestones
 
-| # | Milestone | One-line summary |
-|---|---|---|
-| 1 | Foundation | `src/` layout package, tests, CLI stub |
-| 2 | DAG model | `Task` / `Workflow`, validation, cycle detection, topological order |
-| 3 | State machine | `TaskState` / `WorkflowState` enums with explicit transition tables |
-| 4 | Execution engine | Sequential topological execution, run records, downstream blocking |
-| 5 | Retries | Per-task retry policy with exponential backoff and permanent-failure blocking |
-| 6 | Persistence | SQLite-backed `RunStore`, survives process restart |
-| 7 | YAML workflows | Declarative workflow definitions loaded from `.yaml` |
-| 8 | Full CLI | `orchestrator run / list / show / cancel` |
-| 9 | Local scheduler | `RunOnce` and `IntervalSchedule` with a thread-safe background loop |
-| 10 | Bounded concurrency | Level-scheduled parallel execution with `max_parallel_tasks` |
-| 11 | Hooks & observability | `EngineHooks` callbacks + structured JSON logging + `RunMetrics` |
+| #  | Milestone             | One-line summary                                                              |
+| -- | --------------------- | ----------------------------------------------------------------------------- |
+| 1  | Foundation            | `src/` layout package, tests, CLI stub                                      |
+| 2  | DAG model             | `Task` / `Workflow`, validation, cycle detection, topological order       |
+| 3  | State machine         | `TaskState` / `WorkflowState` enums with explicit transition tables       |
+| 4  | Execution engine      | Sequential topological execution, run records, downstream blocking            |
+| 5  | Retries               | Per-task retry policy with exponential backoff and permanent-failure blocking |
+| 6  | Persistence           | SQLite-backed`RunStore`, survives process restart                           |
+| 7  | YAML workflows        | Declarative workflow definitions loaded from`.yaml`                         |
+| 8  | Full CLI              | `orchestrator run / list / show / cancel`                                   |
+| 9  | Local scheduler       | `RunOnce` and `IntervalSchedule` with a thread-safe background loop       |
+| 10 | Bounded concurrency   | Level-scheduled parallel execution with`max_parallel_tasks`                 |
+| 11 | Hooks & observability | `EngineHooks` callbacks + structured JSON logging + `RunMetrics`          |
 
 ---
 
