@@ -1,6 +1,6 @@
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "etl-orchestrator"
@@ -26,8 +26,8 @@ dev = [
 [project.scripts]
 orchestrator = "etl_orchestrator.cli:main"
 
-[tool.hatch.build.targets.wheel]
-packages = ["src/etl_orchestrator"]
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
