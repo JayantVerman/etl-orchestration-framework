@@ -12,7 +12,11 @@ requires-python = ">=3.10"
 authors = [
     { name = "Jayant Verma", email = "speedpost029@gmail.com" },
 ]
-dependencies = []
+dependencies = [
+    "pydantic>=2",
+    "click>=8",
+    "PyYAML>=6",
+]
 
 [project.optional-dependencies]
 dev = [
