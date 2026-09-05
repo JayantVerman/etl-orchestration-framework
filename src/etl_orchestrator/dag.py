@@ -152,9 +152,7 @@ class Workflow(BaseModel):
 
     def downstream(self, task_id: str) -> frozenset[str]:
         """Return the direct downstream dependents of a task."""
-        return frozenset(
-            tid for tid, ups in self.dependencies.items() if task_id in ups
-        )
+        return frozenset(tid for tid, ups in self.dependencies.items() if task_id in ups)
 
     def roots(self) -> frozenset[str]:
         """Return tasks with no upstream dependencies (entry points)."""
@@ -253,9 +251,7 @@ class Workflow(BaseModel):
         for task_id, upstream in self.dependencies.items():
             indegree[task_id] = len(upstream & self.tasks.keys())
 
-        ready: list[str] = [
-            task_id for task_id, degree in indegree.items() if degree == 0
-        ]
+        ready: list[str] = [task_id for task_id, degree in indegree.items() if degree == 0]
         heapq.heapify(ready)
         order: list[str] = []
 

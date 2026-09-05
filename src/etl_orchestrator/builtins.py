@@ -12,6 +12,7 @@ by the workflow engine.
 """
 
 import random
+from collections.abc import Callable
 
 from etl_orchestrator.engine import TaskContext
 
@@ -33,9 +34,10 @@ def flaky(ctx: TaskContext) -> None:
 
     If ``fail_times`` is not provided, the task fails randomly ~30% of the time.
     """
-    fail_times = ctx.params.get("fail_times")
-    if fail_times is not None:
+    fail_times_raw = ctx.params.get("fail_times")
+    if fail_times_raw is not None:
         attempt = ctx.attempt
+        fail_times = int(fail_times_raw)  # type: ignore
         if attempt <= fail_times:
             raise RuntimeError(f"flaky task failed (attempt {attempt}/{fail_times})")
         return
@@ -79,7 +81,7 @@ def echo(ctx: TaskContext) -> None:
     print(f"[{ctx.task_id}] {message}")
 
 
-DEFAULT_TASK_REGISTRY: dict[str, object] = {
+DEFAULT_TASK_REGISTRY: dict[str, Callable[[TaskContext], None]] = {
     "noop": noop,
     "flaky": flaky,
     "log_message": log_message,
@@ -87,4 +89,3 @@ DEFAULT_TASK_REGISTRY: dict[str, object] = {
     "always_fails": always_fails,
     "echo": echo,
 }
-

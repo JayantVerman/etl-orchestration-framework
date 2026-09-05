@@ -59,9 +59,7 @@ class Scheduler:
         sleeper: Callable[[float], None] = time.sleep,
     ) -> None:
         self._store = store
-        self._registry = (
-            dict(DEFAULT_TASK_REGISTRY) if registry is None else dict(registry)
-        )
+        self._registry = dict(DEFAULT_TASK_REGISTRY) if registry is None else dict(registry)
         self._clock = clock or (lambda: datetime.now(timezone.utc))
         self._sleeper = sleeper
         self._schedules: dict[str, Schedule] = {}
@@ -100,8 +98,7 @@ class Scheduler:
             name
             for name, schedule in self._schedules.items()
             if schedule.last_run_at is None
-            or (current - schedule.last_run_at).total_seconds()
-            >= schedule.interval_seconds
+            or (current - schedule.last_run_at).total_seconds() >= schedule.interval_seconds
         )
 
     def run_once(self) -> list[WorkflowRun]:

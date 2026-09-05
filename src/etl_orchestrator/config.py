@@ -72,9 +72,7 @@ def load_workflow_config(path: str | Path) -> WorkflowConfig:
     try:
         return WorkflowConfig.model_validate(raw)
     except Exception as exc:
-        raise WorkflowConfigError(
-            f"invalid workflow configuration in {file_path}: {exc}"
-        ) from exc
+        raise WorkflowConfigError(f"invalid workflow configuration in {file_path}: {exc}") from exc
 
 
 def build_workflow(config: WorkflowConfig) -> Workflow:
@@ -114,9 +112,7 @@ def load_workflow(path: str | Path) -> Workflow:
 def load_task_params(path: str | Path) -> dict[str, dict[str, object]]:
     """Return per-task parameter dicts from a workflow config file."""
     return {
-        task.task_id: dict(task.params)
-        for task in load_workflow_config(path).tasks
-        if task.params
+        task.task_id: dict(task.params) for task in load_workflow_config(path).tasks if task.params
     }
 
 

@@ -57,9 +57,7 @@ class WorkflowState(str, Enum):
 
 
 #: States meaning the task (or its dependencies) did not succeed.
-FAILURE_STATES: frozenset[TaskState] = frozenset(
-    {TaskState.FAILED, TaskState.UPSTREAM_FAILED}
-)
+FAILURE_STATES: frozenset[TaskState] = frozenset({TaskState.FAILED, TaskState.UPSTREAM_FAILED})
 
 #: States from which a task will never move again (for a given run).
 TERMINAL_TASK_STATES: frozenset[TaskState] = frozenset(

@@ -140,9 +140,7 @@ def test_compute_run_metrics_counts_retries() -> None:
         if counter["n"] < 2:
             raise RuntimeError("again")
 
-    engine = WorkflowEngine(
-        workflow=wf, tasks={"flaky": _flaky}, sleeper=lambda _d: None
-    )
+    engine = WorkflowEngine(workflow=wf, tasks={"flaky": _flaky}, sleeper=lambda _d: None)
     run = engine.run()
     metrics = compute_run_metrics(run)
     assert metrics.succeeded == 1

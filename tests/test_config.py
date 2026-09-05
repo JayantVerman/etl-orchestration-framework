@@ -17,9 +17,7 @@ from etl_orchestrator.config import (
 )
 from etl_orchestrator.exceptions import WorkflowConfigError
 
-EXAMPLE = (
-    Path(__file__).resolve().parents[1] / "configs" / "workflows" / "daily_etl.yaml"
-)
+EXAMPLE = Path(__file__).resolve().parents[1] / "configs" / "workflows" / "daily_etl.yaml"
 
 
 class TestLoading:
@@ -80,11 +78,7 @@ class TestLoading:
     def test_unknown_dependency(self, tmp_path: Path) -> None:
         bad = tmp_path / "bad.yaml"
         bad.write_text(
-            "workflow_id: w\n"
-            "tasks:\n"
-            "  - task_id: a\n"
-            "    callable: echo\n"
-            "    depends_on: [ghost]\n",
+            "workflow_id: w\ntasks:\n  - task_id: a\n    callable: echo\n    depends_on: [ghost]\n",
             encoding="utf-8",
         )
         with pytest.raises(WorkflowConfigError) as exc:
@@ -117,9 +111,7 @@ class TestLoading:
 
 
 class TestConfigDrivenExecution:
-    def test_example_workflow_executes_end_to_end(
-        self, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_example_workflow_executes_end_to_end(self, capsys: pytest.CaptureFixture[str]) -> None:
         config = load_workflow_config(EXAMPLE)
         wf = build_workflow(config)
         engine = WorkflowEngine(

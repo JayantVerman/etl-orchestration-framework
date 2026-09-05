@@ -50,9 +50,7 @@ class JsonLogFormatter(logging.Formatter):
         return json.dumps(payload, default=str)
 
 
-def setup_logging(
-    level: str | int = logging.INFO, stream: TextIO | None = None
-) -> None:
+def setup_logging(level: str | int = logging.INFO, stream: TextIO | None = None) -> None:
     """Configure structured JSON logging for the framework logger.
 
     Safe to call multiple times: existing framework handlers are
@@ -103,9 +101,7 @@ def compute_run_metrics(run: WorkflowRun) -> RunMetrics:
         total_tasks=len(run.records),
     )
     for record in run.records.values():
-        setattr(
-            metrics, counts[record.state], getattr(metrics, counts[record.state]) + 1
-        )
+        setattr(metrics, counts[record.state], getattr(metrics, counts[record.state]) + 1)
         metrics.retries += max(record.attempts - 1, 0)
         metrics.task_states[record.task_id] = record.state.value
     if run.started_at is not None and run.finished_at is not None:

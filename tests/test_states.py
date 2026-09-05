@@ -60,9 +60,7 @@ class TestTaskTransitions:
             (TaskState.RETRYING, TaskState.SUCCESS),  # must re-run first
         ],
     )
-    def test_illegal_transitions_rejected(
-        self, current: TaskState, target: TaskState
-    ) -> None:
+    def test_illegal_transitions_rejected(self, current: TaskState, target: TaskState) -> None:
         assert not can_transition(current, target)
         with pytest.raises(StateTransitionError) as exc:
             transition_task(current, target)
@@ -84,9 +82,7 @@ class TestTaskTransitions:
             assert not is_terminal_task_state(state)
 
     def test_failure_states(self) -> None:
-        assert FAILURE_STATES == frozenset(
-            {TaskState.FAILED, TaskState.UPSTREAM_FAILED}
-        )
+        assert frozenset({TaskState.FAILED, TaskState.UPSTREAM_FAILED}) == FAILURE_STATES
 
 
 class TestWorkflowTransitions:

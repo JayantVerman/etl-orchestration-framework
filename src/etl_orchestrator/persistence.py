@@ -203,10 +203,7 @@ class RunStore:
 
     def list_runs(self, workflow_id: str | None = None) -> list[RunSummary]:
         """Return execution history, newest first, optionally filtered."""
-        query = (
-            "SELECT run_id, workflow_id, state, started_at, finished_at"
-            " FROM workflow_runs"
-        )
+        query = "SELECT run_id, workflow_id, state, started_at, finished_at FROM workflow_runs"
         params: tuple[str, ...] = ()
         if workflow_id is not None:
             query += " WHERE workflow_id = ?"

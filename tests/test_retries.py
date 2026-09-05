@@ -153,9 +153,7 @@ class TestRetryExhaustion:
 # ----------------------------------------------------------------------
 class TestExponentialBackoff:
     def test_delays_follow_exponential_schedule(self) -> None:
-        wf = chain_with_retries(
-            max_attempts=4, backoff_seconds=0.5, backoff_multiplier=3.0
-        )
+        wf = chain_with_retries(max_attempts=4, backoff_seconds=0.5, backoff_multiplier=3.0)
         runner = FlakyRunner({"a": 99})
         sleeps = SleepRecorder()
         WorkflowEngine(wf, runner.callables(wf), sleeper=sleeps).run()

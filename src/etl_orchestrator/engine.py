@@ -141,9 +141,7 @@ class WorkflowEngine:
                 task has no callable, or a callable has no task.
         """
         if max_workers < 1:
-            raise EngineConfigurationError(
-                f"max_workers must be >= 1, got {max_workers}"
-            )
+            raise EngineConfigurationError(f"max_workers must be >= 1, got {max_workers}")
         try:
             workflow.validate_workflow()
         except Exception as exc:
@@ -253,9 +251,7 @@ class WorkflowEngine:
         level_of: dict[str, int] = {}
         for task_id in self._workflow.topological_order():
             upstream = self._workflow.upstream(task_id)
-            level_of[task_id] = (
-                1 + max(level_of[up] for up in upstream) if upstream else 0
-            )
+            level_of[task_id] = 1 + max(level_of[up] for up in upstream) if upstream else 0
         by_level: dict[int, list[str]] = {}
         for task_id, level in level_of.items():
             by_level.setdefault(level, []).append(task_id)
@@ -312,9 +308,9 @@ class WorkflowEngine:
                 record.attempts = attempt
                 if record.started_at is None:
                     record.started_at = self._clock()
+                state_str = TaskState.PENDING.value if attempt == 1 else TaskState.RETRYING.value
                 run.note(
-                    f"{task_id}: {TaskState.PENDING.value if attempt == 1 else TaskState.RETRYING.value}"
-                    f" -> running (attempt {attempt}/{task_def.max_attempts})"
+                    f"{task_id}: {state_str} -> running (attempt {attempt}/{task_def.max_attempts})"
                 )
             LOGGER.info(
                 "task started",
@@ -441,9 +437,7 @@ class WorkflowEngine:
                     )
             pending_visit.extend(sorted(self._workflow.downstream(task_id)))
 
-    def _block_if_upstream_failed(
-        self, run: WorkflowRun, candidate_task_id: str
-    ) -> None:
+    def _block_if_upstream_failed(self, run: WorkflowRun, candidate_task_id: str) -> None:
         """Block ``candidate_task_id`` (and its downstream) if any of its
         direct or transitive upstreams is permanently failed.
 

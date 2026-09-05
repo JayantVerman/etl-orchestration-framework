@@ -103,9 +103,7 @@ class TestSuccessfulRuns:
         def interrupted(ctx: TaskContext) -> None:
             raise KeyboardInterrupt
 
-        engine = WorkflowEngine(
-            wf, {"a": interrupted, "b": interrupted, "c": interrupted}
-        )
+        engine = WorkflowEngine(wf, {"a": interrupted, "b": interrupted, "c": interrupted})
         with pytest.raises(KeyboardInterrupt):
             engine.run()
 

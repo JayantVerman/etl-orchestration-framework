@@ -86,9 +86,7 @@ class TestWorkflowRun:
         assert "extract: success" in result.output
 
     def test_run_params_reach_tasks(self, workspace: Path) -> None:
-        result = invoke(
-            workspace, "workflow", "run", "demo", "--param", "date=2026-09-05"
-        )
+        result = invoke(workspace, "workflow", "run", "demo", "--param", "date=2026-09-05")
         assert result.exit_code == 0
 
     def test_failed_run_exits_nonzero(self, workspace: Path) -> None:

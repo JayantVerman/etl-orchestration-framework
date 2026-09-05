@@ -41,11 +41,7 @@ def _find_workflow_file(workflows_dir: Path, name: str) -> Path:
     """Resolve a workflow name (or explicit path) to a YAML file."""
     candidate = Path(name)
     if candidate.suffix in _WORKFLOW_EXTENSIONS:
-        return (
-            candidate
-            if candidate.is_file()
-            else _fail(f"workflow file not found: {candidate}")
-        )
+        return candidate if candidate.is_file() else _fail(f"workflow file not found: {candidate}")
     for extension in _WORKFLOW_EXTENSIONS:
         path = workflows_dir / f"{name}{extension}"
         if path.is_file():
@@ -61,9 +57,7 @@ def _build_engine(path: Path) -> tuple[WorkflowEngine, Workflow]:
     """Load, resolve, and wire up an engine for a workflow file."""
     config = load_workflow_config(path)
     built = build_workflow(config)
-    callables: dict[str, TaskCallable] = resolve_callables(
-        config, DEFAULT_TASK_REGISTRY
-    )
+    callables: dict[str, TaskCallable] = resolve_callables(config, DEFAULT_TASK_REGISTRY)
     engine = WorkflowEngine(
         built,
         callables,
@@ -99,9 +93,7 @@ def _build_engine(path: Path) -> tuple[WorkflowEngine, Workflow]:
     help="Path to the JSON schedules file.",
 )
 @click.pass_context
-def main(
-    ctx: click.Context, db_path: Path, workflows_dir: Path, schedules_file: Path
-) -> None:
+def main(ctx: click.Context, db_path: Path, workflows_dir: Path, schedules_file: Path) -> None:
     """ETL Orchestration Framework command-line interface."""
     ctx.obj = {
         "db_path": db_path,
@@ -133,18 +125,14 @@ def workflow_list(obj: dict[str, Path]) -> None:
     workflows_dir: Path = obj["workflows_dir"]
     if not workflows_dir.is_dir():
         raise click.ClickException(f"workflows directory not found: {workflows_dir}")
-    files = sorted(
-        p for p in workflows_dir.iterdir() if p.suffix in _WORKFLOW_EXTENSIONS
-    )
+    files = sorted(p for p in workflows_dir.iterdir() if p.suffix in _WORKFLOW_EXTENSIONS)
     if not files:
         click.echo(f"no workflow files in {workflows_dir}")
         return
     for path in files:
         try:
             config = load_workflow_config(path)
-            click.echo(
-                f"{config.workflow_id} ({path.name}) - {len(config.tasks)} tasks"
-            )
+            click.echo(f"{config.workflow_id} ({path.name}) - {len(config.tasks)} tasks")
         except WorkflowConfigError as exc:
             click.echo(f"{path.name}: INVALID ({exc})")
 
@@ -302,9 +290,7 @@ def scheduler_register(obj: dict[str, Path], name: str, interval: float) -> None
     schedules_file: Path = obj["schedules_file"]
     entries = _load_schedules(schedules_file)
     entries = [e for e in entries if e.get("name") != name]
-    entries.append(
-        {"name": name, "path": str(path.resolve()), "interval_seconds": interval}
-    )
+    entries.append({"name": name, "path": str(path.resolve()), "interval_seconds": interval})
     _save_schedules(schedules_file, entries)
     click.echo(f"scheduled '{name}' every {interval}s ({path})")
 
@@ -318,9 +304,7 @@ def scheduler_list(obj: dict[str, Path]) -> None:
         click.echo("no schedules registered")
         return
     for entry in entries:
-        click.echo(
-            f"{entry['name']}: every {entry['interval_seconds']}s ({entry['path']})"
-        )
+        click.echo(f"{entry['name']}: every {entry['interval_seconds']}s ({entry['path']})")
 
 
 @scheduler.command("unregister")
